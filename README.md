@@ -65,6 +65,8 @@ npx playwright install
 If using TypeScript (as in this project), you will need to compile the code into JavaScript. You can do this by running:
 
 ```bash
+npx tsc scrapper/orders.ts
+or
 npm run build
 ```
 
@@ -75,7 +77,7 @@ The compiled JavaScript files will be placed in the `dist` folder.
 To run the script and start the scraping process, execute the following command:
 
 ```bash
-node dist/index.js
+node scrapper/orders.js
 ```
 
 The script will ask for the following information:
