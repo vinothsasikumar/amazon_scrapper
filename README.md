@@ -33,13 +33,13 @@ To run this project locally, you need to have the following installed on your ma
 Open a terminal or command prompt and run the following command to clone the repository to your local machine:
 
 ```bash
-git clone https://github.com/your-username/amazon-web-scraper.git
+git clone https://github.com/vinothsasikumar/amazon_scraper.git
 ```
 
 Navigate into the project directory:
 
 ```bash
-cd amazon-web-scraper
+cd amazon_scraper
 ```
 
 ### Step 2: Install dependencies
@@ -91,13 +91,13 @@ It will also ask for a comma-separated list of search terms for product searches
 After entering your credentials and search strings, you might see results like this:
 
 ```bash
-Please enter your Amazon Email or Mobile Number: your-email@example.com
-Please enter your Amazon Password: *****
-Search value: headphones
+Please enter your Amazon Email or Mobile Number: email@example.com or 9999999999
+Please enter your Amazon Password: ********
+Search value: Iphone
 [
   {
-    "name": "Sony WH-1000XM4 Wireless Headphones",
-    "price": "₹24,999",
+    "name": "Iphone 16 pro max",
+    "price": "₹1,50,000",
     "link": "https://www.amazon.in/dp/B08C7KG5LP"
   },
   ...
