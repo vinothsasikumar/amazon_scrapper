@@ -28,26 +28,56 @@ export const promptUser = (query: string): Promise<string> => {
  * @param {string} username - Amazon username (email or mobile number).
  * @param {string} password - Amazon account password.
  */
-export async function login(page: Page, username: string, password: string) {
-    await page.goto(amazonUrl); // Navigate to Amazon home page
+export async function login(page: Page, username: string, password: string, retryCount: number = 3) {
+    let attempt = 0;
+    let isSuccess = false;
 
-    // Hover over the account list menu and click on the "Sign In" button
-    await page.hover('#nav-link-accountList');
-    await page.click('#nav-flyout-ya-signin a');
+    while (attempt < retryCount && !isSuccess) {
+        try {
 
-    // Fill in the email/phone and password fields
-    await page.fill('input#ap_email', username);
-    await page.click('input#continue');
+            await page.goto(amazonUrl); // Navigate to Amazon home page
 
-    await page.fill('input#ap_password', password);
-    await page.click('input#signInSubmit');
+            // Hover over the account list menu and click on the "Sign In" button
+            await page.hover('#nav-link-accountList');
+            await page.click('#nav-flyout-ya-signin a');
 
-    console.log('If MFA is required, please complete it manually in the browser and the program waits for 25 seconds.');
+            // Fill in the email/phone and password fields
+            await page.fill('input#ap_email', username);
+            await page.click('input#continue');
 
-    // Wait 25 seconds for manual MFA if needed
-    await page.waitForTimeout(25000);
+            await page.fill('input#ap_password', password);
+            await page.click('input#signInSubmit');
 
-    console.log('Logged in successfully');
+            console.log('If MFA is required, please complete it manually in the browser.');
+            console.log('Waiting for potential MFA completion (maximum wait time: 60 seconds).');
+
+            // Wait until twotabsearchtextbox loaded to DOM for manual MFA if needed
+            const loggedIn = await page.waitForSelector('#twotabsearchtextbox', { timeout: 60000 }).catch(() => null);
+            if (!loggedIn) {
+                throw new Error('Login failed: MFA required but not completed or other login issues.');
+            }
+
+            console.log('Logged in successfully');
+            isSuccess = true;
+
+        }
+        catch (err) {
+            attempt += 1;
+            console.error(`Login attempt ${attempt} failed: with exception: `, err);
+
+            if (attempt < retryCount) {
+                console.log(`Retrying login... (${attempt + 1}/${retryCount})`);
+                await page.waitForTimeout(5000);
+            } else {
+                console.error('Max login attempts reached. Could not log in.');
+            }
+        }
+    }
+
+    if (!isSuccess) {
+        throw new Error('Failed to log in. Please try again later.');
+    }
+
 }
 
 /**
@@ -57,29 +87,42 @@ export async function login(page: Page, username: string, password: string) {
  * @returns {Promise<Array<{name: string, price: string, link: string}>>} - A promise that resolves with the order details.
  */
 export async function scrapeOrderHistory(page: Page) {
-    await page.goto(`${amazonUrl}/gp/your-account/order-history`); // Navigate to the order history page
+    try {
 
-    await page.waitForSelector('.order'); // Wait for the order history to load
+        await page.goto(`${amazonUrl}/gp/your-account/order-history`); // Navigate to the order history page
 
-    // Extract the last 10 orders' details (name, price, and product link)
-    const orders = await page.$$eval('.order', (orderElements) => {
-        return orderElements.slice(0, 10).map(order => {
-            const orderElement = order.querySelectorAll('.shipment .a-row .a-link-normal')[1];
-            const priceElement = order.querySelector('.currencyINR')?.parentElement;
+        // Wait for the order history to load or log if no orders are found
+        const ordersExist = await page.waitForSelector('.order', { timeout: 10000 }).catch(() => null);
+        if (!ordersExist) {
+            console.warn('No order history found.');
+            return [];
+        }
 
-            const name = orderElement ? orderElement.textContent?.trim() : 'No data available';
-            const price = priceElement ? priceElement.textContent?.trim() : 'No data available';
-            const link = orderElement ? (orderElement as HTMLLinkElement).href : 'No data available';
+        // Extract the last 10 orders' details (name, price, and product link)
+        const orders = await page.$$eval('.order', (orderElements) => {
+            return orderElements.slice(0, 10).map(order => {
+                const orderElement = order.querySelectorAll('.shipment .a-row .a-link-normal')[1];
+                const priceElement = order.querySelector('.currencyINR')?.parentElement;
 
-            return {
-                name,
-                price,
-                link
-            };
+                const name = orderElement ? orderElement.textContent?.trim() : 'No data available';
+                const price = priceElement ? priceElement.textContent?.trim() : 'No data available';
+                const link = orderElement ? (orderElement as HTMLLinkElement).href : 'No data available';
+
+                return {
+                    name,
+                    price,
+                    link
+                };
+            });
         });
-    });
 
-    return orders; // Return the scraped orders
+        return orders; // Return the scraped orders
+
+    }
+    catch (err) {
+        console.error('Exception:', err);
+        return [];
+    }
 }
 
 /**
@@ -90,26 +133,38 @@ export async function scrapeOrderHistory(page: Page) {
  * @returns {Promise<Array<{name: string, price: string, link: string}>>} - A promise that resolves with the product search results.
  */
 export async function scrapeSearchResults(page: Page, searchString: string) {
-    await page.goto(`${amazonUrl}/s?k=${searchString}`); // Navigate to the search results page for the given search string
+    try {
 
-    await page.waitForSelector('.s-main-slot');  // Wait for the search results to load
+        await page.goto(`${amazonUrl}/s?k=${searchString}`); // Navigate to the search results page for the given search string
 
-    // Extract product details such as name, price, and link
-    const products = await page.$$eval('.s-main-slot .s-result-item', (items) => {
-        return items.slice(0, 10).map(item => {
-            const nameElement = item.querySelector('h2 a span') as HTMLElement;
-            const priceElement = item.querySelector('.a-price-whole') as HTMLElement;
-            const linkElement = item.querySelector('h2 a') as HTMLLinkElement;
+        // Wait for search results to load or handle if none are found
+        const resultsExist = await page.waitForSelector('.s-main-slot', { timeout: 10000 }).catch(() => null);
+        if (!resultsExist) {
+            console.warn(`No results found for "${searchString}".`);
+            return [];
+        }
 
-            const name = nameElement ? nameElement.innerText : 'No data available';
-            const price = priceElement ? priceElement.innerText : 'No data available';
-            const link = linkElement ? linkElement.href : 'No data available';
+        // Extract product details such as name, price, and link
+        const products = await page.$$eval('.s-main-slot .s-result-item', (items) => {
+            return items.slice(0, 10).map(item => {
+                const nameElement = item.querySelector('h2 a span') as HTMLElement;
+                const priceElement = item.querySelector('.a-price-whole') as HTMLElement;
+                const linkElement = item.querySelector('h2 a') as HTMLLinkElement;
 
-            return { name, price, link };
+                const name = nameElement ? nameElement.innerText : 'No data available';
+                const price = priceElement ? priceElement.innerText : 'No data available';
+                const link = linkElement ? linkElement.href : 'No data available';
+
+                return { name, price, link };
+            });
         });
-    });
 
-    return products; // Return the scraped search results
+        return products; // Return the scraped search results
+
+    }
+    catch (err) {
+        console.error('Exception: ', err);
+    }
 }
 
 // Main execution block
@@ -150,7 +205,7 @@ export async function scrapeSearchResults(page: Page, searchString: string) {
             console.log(JSON.stringify(results, null, 2));
         }
 
-    } catch (error) {        
+    } catch (error) {
         console.error('Something went wrong, please check the error log:', error); // Log any errors encountered during execution
     } finally {
         await browser.close(); // Close the browser after the execution is complete
